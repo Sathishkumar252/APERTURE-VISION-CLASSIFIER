@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aperture — Live AI Vision Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Oswald:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+  :root{
+    --black:#0A0A0A;
+    --panel:#161213;
+    --red:#E31B23;
+    --red-deep:#8C0F14;
+    --red-glow:#FF3B3F;
+    --bone:#F5F1EC;
+    --muted:#8A8380;
+    --line:rgba(245,241,236,0.1);
+    --display:'Archivo Black', sans-serif;
+    --head:'Oswald', sans-serif;
+    --mono:'Space Mono', monospace;
+    --body:'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(227,27,35,0.16), transparent 45%),
+      radial-gradient(ellipse at 100% 0%, rgba(140,15,20,0.14), transparent 40%),
+      var(--black);
+    color:var(--bone);
+    font-family:var(--body);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px;}
+
+  header{border-bottom:1px solid var(--line);padding:24px 0;}
+  .headerbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+  .logo{font-family:var(--head);font-weight:700;font-size:18px;letter-spacing:0.04em;display:flex;align-items:center;gap:10px;text-transform:uppercase;}
+  .logo .mark{width:12px;height:12px;background:var(--red);border-radius:50%;}
+  .status-pill{font-family:var(--mono);font-size:11px;letter-spacing:0.06em;color:var(--muted);border:1px solid var(--line);padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:7px;}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+  .status-pill.ready .status-dot{background:var(--red-glow);box-shadow:0 0 8px var(--red-glow);}
+  .status-pill.ready{color:var(--red-glow);border-color:rgba(227,27,35,0.35);}
+
+  .hero{padding:52px 0 30px;}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--red-glow);margin-bottom:16px;}
+  h1{font-family:var(--head);font-weight:700;font-size:clamp(32px,5vw,52px);line-height:1.05;margin:0 0 16px;text-transform:uppercase;max-width:780px;}
+  h1 span{color:var(--red);}
+  .sub{font-size:15.5px;line-height:1.6;color:#C9C1BC;max-width:540px;margin:0;}
+
+  .panel{margin-top:42px;background:var(--panel);border:1px solid var(--line);border-radius:4px;overflow:hidden;}
+  .panel-grid{display:grid;grid-template-columns:1fr 1fr;}
+  @media(max-width:760px){.panel-grid{grid-template-columns:1fr;}}
+
+  .visioncol{border-right:1px solid var(--line);min-height:420px;display:flex;flex-direction:column;position:relative;}
+  @media(max-width:760px){.visioncol{border-right:none;border-bottom:1px solid var(--line);}}
+
+  .tabs{display:flex;border-bottom:1px solid var(--line);}
+  .tab{flex:1;padding:13px;text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);cursor:pointer;background:transparent;border:none;border-bottom:2px solid transparent;}
+  .tab.active{color:var(--bone);border-bottom-color:var(--red);}
+
+  .stage{flex:1;position:relative;min-height:360px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .dropzone{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:30px;
+    background:repeating-linear-gradient(135deg, rgba(227,27,35,0.03) 0px, rgba(227,27,35,0.03) 2px, transparent 2px, transparent 14px);}
+  .dropzone.drag{background:rgba(227,27,35,0.08);}
+  .dropzone svg{width:46px;height:46px;stroke:var(--muted);margin-bottom:12px;}
+  .dz-label{font-family:var(--head);font-size:15px;text-transform:uppercase;letter-spacing:0.02em;color:var(--bone);}
+  .dz-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;}
+  #fileInput{display:none;}
+
+  #mediaWrap{display:none;width:100%;height:100%;position:relative;}
+  #imgEl, #videoEl{width:100%;height:100%;object-fit:cover;display:block;}
+
+  .removebtn{position:absolute;top:10px;right:10px;z-index:3;background:rgba(10,10,10,0.75);color:var(--bone);border:1px solid var(--line);border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+  .corner{position:absolute;width:26px;height:26px;border:2px solid var(--red-glow);opacity:0.9;pointer-events:none;}
+  .c-tl{top:14px;left:14px;border-right:none;border-bottom:none;}
+  .c-tr{top:14px;right:14px;border-left:none;border-bottom:none;}
+  .c-bl{bottom:14px;left:14px;border-right:none;border-top:none;}
+  .c-br{bottom:14px;right:14px;border-left:none;border-top:none;}
+
+  .scanbar{position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,transparent,var(--red-glow),transparent);box-shadow:0 0 16px 2px var(--red-glow);display:none;}
+  .scanning .scanbar{display:block;animation:scanY 0.9s linear infinite;}
+  @keyframes scanY{0%{transform:translateY(0);}100%{transform:translateY(360px);}}
+
+  .camnote{
+    position:absolute;bottom:0;left:0;right:0;padding:10px 14px;
+    background:rgba(10,10,10,0.85);font-family:var(--mono);font-size:10.5px;color:var(--muted);
+    display:none;line-height:1.5;border-top:1px solid var(--line);
+  }
+  .camnote.show{display:block;}
+  .camnote b{color:var(--red-glow);}
+
+  .infocol{padding:28px 26px;display:flex;flex-direction:column;}
+  .info-label{font-family:var(--mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+  .info-steps{list-style:none;padding:0;margin:0 0 24px;display:grid;gap:14px;}
+  .info-steps li{display:flex;gap:12px;font-size:13.5px;line-height:1.5;color:#D8D2CD;}
+  .info-steps .n{font-family:var(--mono);font-size:11px;color:var(--red-glow);border:1px solid rgba(227,27,35,0.4);width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:0 0 20px;}
+  #scanBtn{margin-top:auto;font-family:var(--head);font-size:14px;letter-spacing:0.05em;text-transform:uppercase;background:var(--red);color:#fff;border:none;padding:16px 24px;border-radius:3px;cursor:pointer;font-weight:600;transition:background .15s ease, transform .15s ease;}
+  #scanBtn:hover{background:var(--red-glow);}
+  #scanBtn:active{transform:scale(0.98);}
+  #scanBtn:disabled{background:#3A2C2C;color:var(--muted);cursor:not-allowed;}
+
+  #report{margin-top:46px;display:none;}
+  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:30px;position:relative;overflow:hidden;}
+  .ticket::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:var(--red);}
+  .section-title{font-family:var(--mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin:0 0 16px;}
+  .top-result{display:flex;align-items:baseline;gap:14px;margin-bottom:24px;flex-wrap:wrap;}
+  .top-label{font-family:var(--head);font-weight:700;font-size:28px;text-transform:uppercase;}
+  .top-conf{font-family:var(--mono);font-size:14px;color:var(--red-glow);}
+  .bars{display:grid;gap:12px;}
+  .bar-row{display:flex;align-items:center;gap:14px;}
+  .bar-label{font-size:13px;width:190px;flex:0 0 190px;color:#D8D2CD;text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bar-track{flex:1;height:9px;background:rgba(245,241,236,0.07);border-radius:5px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--red-deep),var(--red-glow));}
+  .bar-pct{font-family:var(--mono);font-size:11px;color:var(--muted);width:46px;text-align:right;flex:0 0 46px;}
+
+  .errbox{background:rgba(227,27,35,0.08);border:1px solid rgba(227,27,35,0.3);padding:16px 18px;border-radius:4px;font-size:13.5px;color:#EDE8E3;line-height:1.6;}
+  .errbox b{color:var(--red-glow);}
+  .errbox code{background:rgba(245,241,236,0.08);padding:2px 6px;border-radius:3px;font-family:var(--mono);font-size:12px;}
+
+  footer{padding:34px 0 60px;border-top:1px solid var(--line);margin-top:60px;font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap headerbar">
+    <div class="logo"><span class="mark"></span>APERTURE</div>
+    <span class="status-pill" id="statusPill"><span class="status-dot"></span>Loading model...</span>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Computer Vision · TensorFlow.js · Runs 100% in your browser</div>
+    <h1>Show it anything.<br><span>Watch it see.</span></h1>
+    <p class="sub">A real convolutional neural network (MobileNet, pretrained on 1,000 categories) running entirely client-side — no server, no upload, no API key. Use your camera or drop a photo.</p>
+
+    <div class="panel" id="panel">
+      <div class="panel-grid">
+        <div class="visioncol">
+          <div class="tabs">
+            <button class="tab active" id="tabUpload">Upload Photo</button>
+            <button class="tab" id="tabCamera">Use Camera</button>
+          </div>
+          <div class="stage" id="stage">
+            <div class="dropzone" id="dropzone">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14a2 2 0 0 0 2-2v-5H3v5a2 2 0 0 0 2 2Z"/></svg>
+              <div class="dz-label">Drop an image</div>
+              <div class="dz-sub">or click to browse — JPG / PNG</div>
+            </div>
+            <div id="mediaWrap">
+              <img id="imgEl" src="" alt="Uploaded photo">
+              <video id="videoEl" autoplay muted playsinline style="display:none;"></video>
+              <div class="corner c-tl"></div><div class="corner c-tr"></div>
+              <div class="corner c-bl"></div><div class="corner c-br"></div>
+              <button class="removebtn" id="removeBtn" title="Remove">✕</button>
+            </div>
+            <div class="scanbar"></div>
+            <div class="camnote" id="camnote"></div>
+            <input type="file" id="fileInput" accept="image/*">
+          </div>
+        </div>
+        <div class="infocol">
+          <div class="info-label">How it works</div>
+          <ul class="info-steps">
+            <li><span class="n">1</span>MobileNet loads once into your browser and runs locally via WebGL — nothing leaves your device.</li>
+            <li><span class="n">2</span>Your image is resized to 224×224 and passed through the network's convolutional layers.</li>
+            <li><span class="n">3</span>You get the top-5 predicted categories with confidence scores, computed in milliseconds.</li>
+          </ul>
+          <button id="scanBtn" disabled>Loading model...</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="report">
+      <div class="ticket" id="ticket"></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex;justify-content:space-between;width:100%;flex-wrap:wrap;gap:10px;">
+    <span>APERTURE — client-side vision, no backend</span>
+    <span>Model: MobileNet v2, pretrained on ImageNet (1000 classes)</span>
+  </div>
+</footer>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const mediaWrap = document.getElementById('mediaWrap');
+const imgEl = document.getElementById('imgEl');
+const videoEl = document.getElementById('videoEl');
+const removeBtn = document.getElementById('removeBtn');
+const scanBtn = document.getElementById('scanBtn');
+const panel = document.getElementById('panel');
+const report = document.getElementById('report');
+const ticket = document.getElementById('ticket');
+const statusPill = document.getElementById('statusPill');
+const tabUpload = document.getElementById('tabUpload');
+const tabCamera = document.getElementById('tabCamera');
+const camnote = document.getElementById('camnote');
+
+let model = null;
+let mode = 'upload';
+let cameraStream = null;
+let hasMedia = false;
+
+// getUserMedia only works on HTTPS or localhost — opening the file directly
+// (file:// in the address bar) will always block camera access. Detect this
+// upfront so the message is clear instead of a confusing browser error.
+const isSecureContext = window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+// ---------- Load model (fast: smaller alpha + warm-up pass) ----------
+async function loadModel(){
+  try{
+    const t0 = performance.now();
+    model = await mobilenet.load({version: 2, alpha: 0.5}); // smaller/faster variant
+    // Warm up the model with a dummy prediction so the FIRST real scan is fast too
+    const warm = tf.zeros([224, 224, 3]);
+    await model.classify(warm);
+    warm.dispose();
+    const loadTime = ((performance.now() - t0) / 1000).toFixed(1);
+
+    statusPill.classList.add('ready');
+    statusPill.innerHTML = `<span class="status-dot"></span>Model ready (${loadTime}s)`;
+    if (hasMedia){
+      scanBtn.disabled = false;
+      scanBtn.textContent = 'Classify →';
+    } else {
+      scanBtn.textContent = mode === 'camera' ? 'Start camera first' : 'Upload an image first';
+    }
+  } catch(err){
+    statusPill.innerHTML = '<span class="status-dot"></span>Model failed to load';
+    scanBtn.textContent = 'Model unavailable — check connection';
+  }
+}
+loadModel();
+
+// ---------- Tabs ----------
+tabUpload.addEventListener('click', () => switchMode('upload'));
+tabCamera.addEventListener('click', () => switchMode('camera'));
+
+function switchMode(m){
+  mode = m;
+  tabUpload.classList.toggle('active', m === 'upload');
+  tabCamera.classList.toggle('active', m === 'camera');
+  resetStage();
+  if (m === 'camera') startCamera();
+}
+
+async function startCamera(){
+  camnote.classList.remove('show');
+
+  if (!isSecureContext){
+    dropzone.style.display = 'none';
+    mediaWrap.style.display = 'none';
+    camnote.innerHTML = `<b>Camera blocked:</b> browsers only allow camera access on <b>HTTPS</b> sites or <b>localhost</b> — not when a file is opened directly (file://). Two fixes: <br>
+      1) Run a local server: open a terminal in this folder and run <code>python -m http.server</code>, then visit <code>http://localhost:8000</code>.<br>
+      2) Or deploy this file on GitHub Pages (already HTTPS) and use it there — upload works either way, this only affects the camera tab.`;
+    camnote.classList.add('show');
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    camnote.innerHTML = `<b>Camera not supported</b> in this browser. Try Chrome, Edge, or Safari, or use Upload Photo instead.`;
+    camnote.classList.add('show');
+    return;
+  }
+
+  try{
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    videoEl.srcObject = cameraStream;
+    videoEl.style.display = 'block';
+    imgEl.style.display = 'none';
+    dropzone.style.display = 'none';
+    mediaWrap.style.display = 'block';
+    hasMedia = true;
+    scanBtn.disabled = !model;
+    scanBtn.textContent = model ? 'Classify →' : 'Loading model...';
+  } catch(err){
+    dropzone.style.display = 'none';
+    mediaWrap.style.display = 'none';
+    let msg = 'Could not access the camera.';
+    if (err.name === 'NotAllowedError') msg = '<b>Permission denied.</b> Click the camera/lock icon in your browser\'s address bar and allow camera access, then try again.';
+    else if (err.name === 'NotFoundError') msg = '<b>No camera found</b> on this device.';
+    camnote.innerHTML = msg + ' You can always use Upload Photo instead.';
+    camnote.classList.add('show');
+  }
+}
+
+function stopCamera(){
+  if (cameraStream){
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+}
+
+// ---------- Upload ----------
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file){
+  if (!file.type.startsWith('image/')) { alert('Please upload an image file.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imgEl.src = e.target.result;
+    imgEl.style.display = 'block';
+    videoEl.style.display = 'none';
+    dropzone.style.display = 'none';
+    mediaWrap.style.display = 'block';
+    hasMedia = true;
+    scanBtn.disabled = !model;
+    scanBtn.textContent = model ? 'Classify →' : 'Loading model...';
+    report.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+removeBtn.addEventListener('click', (e) => { e.stopPropagation(); resetStage(); });
+
+function resetStage(){
+  stopCamera();
+  hasMedia = false;
+  fileInput.value = '';
+  imgEl.src = ''; imgEl.style.display = 'none';
+  videoEl.style.display = 'none';
+  mediaWrap.style.display = 'none';
+  dropzone.style.display = 'flex';
+  camnote.classList.remove('show');
+  scanBtn.disabled = true;
+  scanBtn.textContent = mode === 'camera' ? 'Start camera first' : 'Upload an image first';
+  report.style.display = 'none';
+}
+
+// ---------- Classify (fast: no artificial delay, model already warmed up) ----------
+scanBtn.addEventListener('click', async () => {
+  if (!model || !hasMedia) return;
+  panel.classList.add('scanning');
+  scanBtn.disabled = true;
+  scanBtn.textContent = 'Classifying...';
+
+  const sourceEl = mode === 'camera' ? videoEl : imgEl;
+
+  try{
+    const predictions = await model.classify(sourceEl, 5);
+    panel.classList.remove('scanning');
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'Classify →';
+    renderReport(predictions);
+  } catch(err){
+    panel.classList.remove('scanning');
+    scanBtn.disabled = false;
+    scanBtn.textContent = 'Classify →';
+    ticket.innerHTML = `<div class="errbox"><b>Classification failed:</b> ${err.message}</div>`;
+    report.style.display = 'block';
+  }
+});
+
+function renderReport(predictions){
+  const top = predictions[0];
+  const barsHtml = predictions.map((p) => `
+    <div class="bar-row">
+      <span class="bar-label">${p.className.split(',')[0]}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${(p.probability*100).toFixed(1)}%"></div></div>
+      <span class="bar-pct">${(p.probability*100).toFixed(1)}%</span>
+    </div>
+  `).join('');
+
+  ticket.innerHTML = `
+    <div class="section-title">Top prediction</div>
+    <div class="top-result">
+      <span class="top-label">${top.className.split(',')[0]}</span>
+      <span class="top-conf">${(top.probability*100).toFixed(1)}% confidence</span>
+    </div>
+    <div class="section-title">Full breakdown (top 5)</div>
+    <div class="bars">${barsHtml}</div>
+  `;
+  report.style.display = 'block';
+  report.scrollIntoView({behavior:'smooth', block:'start'});
+}
+</script>
+
+</body>
+</html>
